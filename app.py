@@ -199,20 +199,31 @@ def load_summarization_pipeline():
     from transformers import pipeline
     return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
  
+def safe_load(loader_fn, friendly_name):
+    """Load a pipeline and surface a clean, actionable error instead of a raw traceback."""
+    try:
+        return loader_fn()
+    except Exception as e:
+        st.error(
+            f"⚠️ Couldn't load the {friendly_name} model. This is usually a temporary "
+            f"environment/dependency hiccup on first boot — try refreshing the app "
+            f"(or reboot it from 'Manage app'). Details: {type(e).__name__}: {e}"
+        )
+        st.stop()
+ 
 # --------------------------------------------------------------------------------------
 # HERO HEADER
 # --------------------------------------------------------------------------------------
 st.markdown("""
 <div class="hero">
     <h1>🎬 Dhurandhar 2 — Review Intelligence Studio</h1>
-    <p>An end-to-end NLP pipeline powered by Hugging Face Transformers — sentiment classification,
-    machine translation, question answering, and summarization applied to real audience reviews.</p>
+    <p>Step inside the audience reaction — see what people really felt, in any language,
+    answered on demand, distilled to the essentials.</p>
     <div class="badge-row">
-        <span class="badge">🤗 Transformers</span>
-        <span class="badge">DistilBERT · SST-2</span>
-        <span class="badge">Helsinki-NLP · EN→ES</span>
-        <span class="badge">SQuAD Q&A</span>
-        <span class="badge">DistilBART Summarizer</span>
+        <span class="badge">✨ Instant Sentiment</span>
+        <span class="badge">🌍 Live Translation</span>
+        <span class="badge">💬 Ask Anything</span>
+        <span class="badge">⚡ Smart Summaries</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -221,23 +232,15 @@ st.markdown("""
 # SIDEBAR
 # --------------------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### 🎛️ Studio Controls")
-    st.caption("Dataset is preloaded — sit back and explore.")
+    st.markdown("### 🎬 Dhurandhar 2")
+    st.caption("Audience reviews, decoded.")
     st.markdown("---")
-    st.markdown(f"**Total reviews:** {len(df)}")
     pos_count = real_labels.count("POSITIVE")
     neg_count = real_labels.count("NEGATIVE")
+    st.markdown(f"**Total reviews:** {len(df)}")
     st.markdown(f"**Positive:** {pos_count}  |  **Negative:** {neg_count}")
     st.markdown("---")
-    st.markdown("### 📚 Pipeline Stack")
-    st.markdown("""
-    - **Sentiment:** `distilbert-base-uncased-finetuned-sst-2-english`
-    - **Translation:** `Helsinki-NLP/opus-mt-en-es`
-    - **Q&A:** `distilbert-base-cased-distilled-squad`
-    - **Summarization:** `sshleifer/distilbart-cnn-12-6`
-    """)
-    st.markdown("---")
-    st.caption("Built with 🩷 using Streamlit + 🤗 Transformers")
+    st.caption("Made with 🩷")
  
 # --------------------------------------------------------------------------------------
 # TABS
@@ -325,7 +328,7 @@ with tab2:
     if run_batch or "batch_results" in st.session_state:
         if run_batch:
             with st.spinner("Loading model & classifying reviews..."):
-                classifier = load_sentiment_pipeline()
+                classifier = safe_load(load_sentiment_pipeline, "sentiment analysis")
                 predicted_labels = classifier(reviews)
                 st.session_state["batch_results"] = predicted_labels
         predicted_labels = st.session_state["batch_results"]
@@ -374,7 +377,7 @@ with tab2:
     custom_text = st.text_area("Enter a movie review:", "KGF 2 is an amazing movie with powerful action and excellent performance.", height=100)
     if st.button("Analyze Sentiment", key="custom_sentiment"):
         with st.spinner("Analyzing..."):
-            classifier = load_sentiment_pipeline()
+            classifier = safe_load(load_sentiment_pipeline, "sentiment analysis")
             result = classifier(custom_text)[0]
         cls = "pos" if result["label"] == "POSITIVE" else "neg"
         st.markdown(f"""
@@ -404,7 +407,7 @@ with tab3:
  
     if st.button("🌍 Translate to Spanish"):
         with st.spinner("Translating..."):
-            translator = load_translation_pipeline()
+            translator = safe_load(load_translation_pipeline, "translation")
             chunk = text_to_translate[:1000]
             translated = translator(chunk)[0]["translation_text"]
         col_en, col_es = st.columns(2)
@@ -442,7 +445,7 @@ with tab4:
  
     if st.button("❓ Get Answer") and question.strip():
         with st.spinner("Finding the answer..."):
-            qa_pipe = load_qa_pipeline()
+            qa_pipe = safe_load(load_qa_pipeline, "question-answering")
             result = qa_pipe(question=question, context=context)
         st.markdown(f"""
         <div class="review-card pos">
@@ -475,7 +478,7 @@ with tab5:
  
     if st.button("📝 Summarize"):
         with st.spinner("Generating summary..."):
-            summarizer = load_summarization_pipeline()
+            summarizer = safe_load(load_summarization_pipeline, "summarization")
             summary = summarizer(full_review, max_length=max_len, min_length=min_len, do_sample=False)[0]["summary_text"]
         orig_words = len(full_review.split())
         summ_words = len(summary.split())
