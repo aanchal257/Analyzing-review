@@ -154,13 +154,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
  
 # --------------------------------------------------------------------------------------
-# DATA LOADING (dataset is embedded directly in this file — no external file, no upload)
+# DATA LOADING — CSV must sit in the SAME FOLDER as app.py (repo root).
+# No subfolders, no upload widget — just keep the two files together.
 # --------------------------------------------------------------------------------------
-from dataset import CSV_DATA
+DATA_FILENAME = "netflix_movie_dhurandhar_2.csv"
+DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), DATA_FILENAME)
  
 @st.cache_data(show_spinner=False)
 def load_data():
-    df = pd.read_csv(StringIO(CSV_DATA), delimiter=";")
+    if not os.path.exists(DATA_PATH):
+        st.error(
+            f"Could not find '{DATA_FILENAME}'. Make sure it's uploaded to the same "
+            f"folder as app.py (repo root) — no subfolders."
+        )
+        st.stop()
+    df = pd.read_csv(DATA_PATH, delimiter=";", encoding="utf-8-sig")
     df.columns = [c.strip() for c in df.columns]
     return df
  
