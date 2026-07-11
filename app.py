@@ -405,24 +405,6 @@ with tab2:
     else:
         st.info("Click the button above to classify all reviews and compute accuracy / F1 score.")
  
-    st.markdown("---")
-    st.markdown('<div class="section-title" style="font-size:1.15rem;">Try Your Own Review</div>', unsafe_allow_html=True)
-    custom_text = st.text_area("Enter a movie review:", "KGF 2 is an amazing movie with powerful action and excellent performance.", height=100)
-    if st.button("Analyze Sentiment", key="custom_sentiment"):
-        with st.spinner("Analyzing..."):
-            classifier = safe_load(load_sentiment_pipeline, "sentiment analysis")
-            result = safe_call(classifier, custom_text, friendly_name="sentiment analysis")[0]
-        cls = "pos" if result["label"] == "POSITIVE" else "neg"
-        st.markdown(f"""
-        <div class="review-card {cls}">
-            <div class="rc-head">
-                <span class="rc-tag {cls}">{result['label']}</span>
-                <span class="rc-conf">Confidence: {result['score']:.2%}</span>
-            </div>
-            <div class="rc-text">{custom_text}</div>
-        </div>
-        """, unsafe_allow_html=True)
- 
 # ========================================================================================
 # TAB 3 — TRANSLATION
 # ========================================================================================
@@ -441,8 +423,10 @@ with tab3:
     if st.button("🌍 Translate to Spanish"):
         with st.spinner("Translating..."):
             translator = safe_load(load_translation_pipeline, "translation")
-            chunk = text_to_translate[:1000]
-            translated = safe_call(translator, chunk, friendly_name="translation")[0]["translation_text"]
+            chunk = text_to_translate[:1500]
+            translated = safe_call(
+                translator, chunk, truncation=True, friendly_name="translation"
+            )[0]["translation_text"]
         col_en, col_es = st.columns(2)
         with col_en:
             st.markdown("**🇬🇧 Original (English)**")
@@ -510,23 +494,26 @@ with tab5:
     min_len = st.slider("Min summary length (tokens):", 10, 60, 25)
  
     if st.button("📝 Summarize"):
-        with st.spinner("Generating summary..."):
-            summarizer = safe_load(load_summarization_pipeline, "summarization")
-            summary = safe_call(
-                summarizer, full_review, max_length=max_len, min_length=min_len,
-                do_sample=False, friendly_name="summarization"
-            )[0]["summary_text"]
-        orig_words = len(full_review.split())
-        summ_words = len(summary.split())
-        st.markdown(f"""
-        <div class="review-card pos">
-            <div class="rc-head">
-                <span class="rc-tag pos">Summary</span>
-                <span class="rc-conf">{orig_words} words → {summ_words} words ({(1 - summ_words/orig_words)*100:.0f}% shorter)</span>
+        if min_len >= max_len:
+            st.warning("Min length must be smaller than max length — adjust the sliders and try again.")
+        else:
+            with st.spinner("Generating summary..."):
+                summarizer = safe_load(load_summarization_pipeline, "summarization")
+                summary = safe_call(
+                    summarizer, full_review, max_length=max_len, min_length=min_len,
+                    do_sample=False, truncation=True, friendly_name="summarization"
+                )[0]["summary_text"]
+            orig_words = len(full_review.split())
+            summ_words = len(summary.split())
+            st.markdown(f"""
+            <div class="review-card pos">
+                <div class="rc-head">
+                    <span class="rc-tag pos">Summary</span>
+                    <span class="rc-conf">{orig_words} words → {summ_words} words ({(1 - summ_words/orig_words)*100:.0f}% shorter)</span>
+                </div>
+                <div class="rc-text">{summary}</div>
             </div>
-            <div class="rc-text">{summary}</div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
  
 # --------------------------------------------------------------------------------------
 # FOOTER
