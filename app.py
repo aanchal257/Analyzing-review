@@ -177,38 +177,71 @@ reviews = df["Review"].tolist()
 real_labels = df["Class"].tolist()
  
 # --------------------------------------------------------------------------------------
-# MODEL LOADING (cached)
+# MODEL LOADING (cached) — pinned to CPU explicitly + low_cpu_mem_usage to keep memory
+# footprint small on resource-constrained hosting (e.g. Streamlit Community Cloud)
 # --------------------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def load_sentiment_pipeline():
     from transformers import pipeline
-    return pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+    return pipeline(
+        "sentiment-analysis",
+        model="distilbert-base-uncased-finetuned-sst-2-english",
+        device=-1,
+        model_kwargs={"low_cpu_mem_usage": True},
+    )
  
 @st.cache_resource(show_spinner=False)
 def load_translation_pipeline():
     from transformers import pipeline
-    return pipeline("translation_en_to_es", model="Helsinki-NLP/opus-mt-en-es")
+    return pipeline(
+        "translation_en_to_es",
+        model="Helsinki-NLP/opus-mt-en-es",
+        device=-1,
+        model_kwargs={"low_cpu_mem_usage": True},
+    )
  
 @st.cache_resource(show_spinner=False)
 def load_qa_pipeline():
     from transformers import pipeline
-    return pipeline("question-answering", model="distilbert-base-cased-distilled-squad")
+    return pipeline(
+        "question-answering",
+        model="distilbert-base-cased-distilled-squad",
+        device=-1,
+        model_kwargs={"low_cpu_mem_usage": True},
+    )
  
 @st.cache_resource(show_spinner=False)
 def load_summarization_pipeline():
     from transformers import pipeline
-    return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+    # Lighter distilled checkpoint (~half the size of distilbart-cnn-12-6) to reduce
+    # memory pressure when running alongside the other three models.
+    return pipeline(
+        "summarization",
+        model="sshleifer/distilbart-cnn-6-6",
+        device=-1,
+        model_kwargs={"low_cpu_mem_usage": True},
+    )
  
 def safe_load(loader_fn, friendly_name):
     """Load a pipeline and surface a clean, actionable error instead of a raw traceback."""
+    import traceback
     try:
         return loader_fn()
     except Exception as e:
-        st.error(
-            f"⚠️ Couldn't load the {friendly_name} model. This is usually a temporary "
-            f"environment/dependency hiccup on first boot — try refreshing the app "
-            f"(or reboot it from 'Manage app'). Details: {type(e).__name__}: {e}"
-        )
+        st.error(f"⚠️ Couldn't load the {friendly_name} model.")
+        with st.expander("Show technical details"):
+            st.code(traceback.format_exc())
+        st.stop()
+ 
+def safe_call(fn, *args, friendly_name="model", **kwargs):
+    """Run inference and surface a clean, actionable error instead of a raw traceback."""
+    import traceback
+    try:
+        return fn(*args, **kwargs)
+    except Exception as e:
+        st.error(f"⚠️ The {friendly_name} step failed while running.")
+        with st.expander("Show technical details"):
+            st.code(traceback.format_exc())
         st.stop()
  
 # --------------------------------------------------------------------------------------
@@ -329,7 +362,7 @@ with tab2:
         if run_batch:
             with st.spinner("Loading model & classifying reviews..."):
                 classifier = safe_load(load_sentiment_pipeline, "sentiment analysis")
-                predicted_labels = classifier(reviews)
+                predicted_labels = safe_call(classifier, reviews, friendly_name="sentiment analysis")
                 st.session_state["batch_results"] = predicted_labels
         predicted_labels = st.session_state["batch_results"]
  
@@ -378,7 +411,7 @@ with tab2:
     if st.button("Analyze Sentiment", key="custom_sentiment"):
         with st.spinner("Analyzing..."):
             classifier = safe_load(load_sentiment_pipeline, "sentiment analysis")
-            result = classifier(custom_text)[0]
+            result = safe_call(classifier, custom_text, friendly_name="sentiment analysis")[0]
         cls = "pos" if result["label"] == "POSITIVE" else "neg"
         st.markdown(f"""
         <div class="review-card {cls}">
@@ -409,7 +442,7 @@ with tab3:
         with st.spinner("Translating..."):
             translator = safe_load(load_translation_pipeline, "translation")
             chunk = text_to_translate[:1000]
-            translated = translator(chunk)[0]["translation_text"]
+            translated = safe_call(translator, chunk, friendly_name="translation")[0]["translation_text"]
         col_en, col_es = st.columns(2)
         with col_en:
             st.markdown("**🇬🇧 Original (English)**")
@@ -446,7 +479,7 @@ with tab4:
     if st.button("❓ Get Answer") and question.strip():
         with st.spinner("Finding the answer..."):
             qa_pipe = safe_load(load_qa_pipeline, "question-answering")
-            result = qa_pipe(question=question, context=context)
+            result = safe_call(qa_pipe, question=question, context=context, friendly_name="question-answering")
         st.markdown(f"""
         <div class="review-card pos">
             <div class="rc-head">
@@ -479,7 +512,10 @@ with tab5:
     if st.button("📝 Summarize"):
         with st.spinner("Generating summary..."):
             summarizer = safe_load(load_summarization_pipeline, "summarization")
-            summary = summarizer(full_review, max_length=max_len, min_length=min_len, do_sample=False)[0]["summary_text"]
+            summary = safe_call(
+                summarizer, full_review, max_length=max_len, min_length=min_len,
+                do_sample=False, friendly_name="summarization"
+            )[0]["summary_text"]
         orig_words = len(full_review.split())
         summ_words = len(summary.split())
         st.markdown(f"""
