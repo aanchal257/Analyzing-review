@@ -1,7 +1,7 @@
 """
 Dhurandhar 2 — Review Intelligence Studio
-An end-to-end NLP dashboard (Sentiment, Translation, Q&A, Summarization)
-built on Hugging Face Transformers, wrapped in a polished Streamlit UI.
+A Streamlit dashboard with dataset insights and instant review summarization,
+built on Hugging Face Transformers.
 """
  
 import os
@@ -181,40 +181,8 @@ real_labels = df["Class"].tolist()
 # footprint small on resource-constrained hosting (e.g. Streamlit Community Cloud)
 # --------------------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
-def load_sentiment_pipeline():
-    from transformers import pipeline
-    return pipeline(
-        "sentiment-analysis",
-        model="distilbert-base-uncased-finetuned-sst-2-english",
-        device=-1,
-        model_kwargs={"low_cpu_mem_usage": True},
-    )
- 
-@st.cache_resource(show_spinner=False)
-def load_translation_pipeline():
-    from transformers import pipeline
-    return pipeline(
-        "translation_en_to_es",
-        model="Helsinki-NLP/opus-mt-en-es",
-        device=-1,
-        model_kwargs={"low_cpu_mem_usage": True},
-    )
- 
-@st.cache_resource(show_spinner=False)
-def load_qa_pipeline():
-    from transformers import pipeline
-    return pipeline(
-        "question-answering",
-        model="distilbert-base-cased-distilled-squad",
-        device=-1,
-        model_kwargs={"low_cpu_mem_usage": True},
-    )
- 
-@st.cache_resource(show_spinner=False)
 def load_summarization_pipeline():
     from transformers import pipeline
-    # Lighter distilled checkpoint (~half the size of distilbart-cnn-12-6) to reduce
-    # memory pressure when running alongside the other three models.
     return pipeline(
         "summarization",
         model="sshleifer/distilbart-cnn-6-6",
@@ -250,13 +218,10 @@ def safe_call(fn, *args, friendly_name="model", **kwargs):
 st.markdown("""
 <div class="hero">
     <h1>🎬 Dhurandhar 2 — Review Intelligence Studio</h1>
-    <p>Step inside the audience reaction — see what people really felt, in any language,
-    answered on demand, distilled to the essentials.</p>
+    <p>Step inside the audience reaction — every review, distilled to what matters most.</p>
     <div class="badge-row">
-        <span class="badge">✨ Instant Sentiment</span>
-        <span class="badge">🌍 Live Translation</span>
-        <span class="badge">💬 Ask Anything</span>
         <span class="badge">⚡ Smart Summaries</span>
+        <span class="badge">📊 Audience Insights</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -278,9 +243,7 @@ with st.sidebar:
 # --------------------------------------------------------------------------------------
 # TABS
 # --------------------------------------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 Overview", "😊 Sentiment Analysis", "🌍 Translation", "❓ Question Answering", "📝 Summarization"
-])
+tab1, tab2 = st.tabs(["📊 Overview", "📝 Summarization"])
  
 # ========================================================================================
 # TAB 1 — OVERVIEW
@@ -350,136 +313,11 @@ with tab1:
         """, unsafe_allow_html=True)
  
 # ========================================================================================
-# TAB 2 — SENTIMENT ANALYSIS
+# TAB 2 — SUMMARIZATION
 # ========================================================================================
 with tab2:
-    st.markdown('<div class="section-title">Batch Sentiment Evaluation</div>', unsafe_allow_html=True)
-    st.caption("Runs DistilBERT (SST-2 fine-tuned) across the full review set and benchmarks it against ground-truth labels.")
- 
-    run_batch = st.button("▶ Run Sentiment Analysis on Dataset", key="run_batch")
- 
-    if run_batch or "batch_results" in st.session_state:
-        if run_batch:
-            with st.spinner("Loading model & classifying reviews..."):
-                classifier = safe_load(load_sentiment_pipeline, "sentiment analysis")
-                predicted_labels = safe_call(classifier, reviews, friendly_name="sentiment analysis")
-                st.session_state["batch_results"] = predicted_labels
-        predicted_labels = st.session_state["batch_results"]
- 
-        import evaluate
-        accuracy = evaluate.load("accuracy")
-        f1 = evaluate.load("f1")
-        references = [1 if label == "POSITIVE" else 0 for label in real_labels]
-        predictions = [1 if p["label"] == "POSITIVE" else 0 for p in predicted_labels]
-        acc = accuracy.compute(references=references, predictions=predictions)["accuracy"]
-        f1_score = f1.compute(references=references, predictions=predictions)["f1"]
- 
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.markdown(f"""<div class="metric-card"><div class="metric-label">Accuracy</div>
-            <div class="metric-value">{acc*100:.1f}%</div></div>""", unsafe_allow_html=True)
-        with m2:
-            st.markdown(f"""<div class="metric-card"><div class="metric-label">F1 Score</div>
-            <div class="metric-value">{f1_score:.3f}</div></div>""", unsafe_allow_html=True)
-        with m3:
-            correct = sum(1 for r, p in zip(references, predictions) if r == p)
-            st.markdown(f"""<div class="metric-card"><div class="metric-label">Correct Predictions</div>
-            <div class="metric-value">{correct}/{len(references)}</div></div>""", unsafe_allow_html=True)
- 
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown('<div class="section-title" style="font-size:1.1rem;">Prediction Detail</div>', unsafe_allow_html=True)
-        for i, (rev, pred, actual) in enumerate(zip(reviews, predicted_labels, real_labels)):
-            cls = "pos" if pred["label"] == "POSITIVE" else "neg"
-            match = pred["label"] == actual
-            snippet = rev if len(rev) < 260 else rev[:260].rsplit(" ", 1)[0] + " …"
-            st.markdown(f"""
-            <div class="review-card {cls}">
-                <div class="rc-head">
-                    <span class="rc-tag {cls}">Predicted: {pred['label']}</span>
-                    <span class="rc-conf">Confidence: {pred['score']:.2%} &nbsp;|&nbsp; Actual: {actual} &nbsp;
-                    <span class="{'match-yes' if match else 'match-no'}">{'✓ match' if match else '✗ mismatch'}</span></span>
-                </div>
-                <div class="rc-text">{snippet}</div>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("Click the button above to classify all reviews and compute accuracy / F1 score.")
- 
-# ========================================================================================
-# TAB 3 — TRANSLATION
-# ========================================================================================
-with tab3:
-    st.markdown('<div class="section-title">English → Spanish Translation</div>', unsafe_allow_html=True)
-    st.caption("Powered by Helsinki-NLP's MarianMT (opus-mt-en-es).")
- 
-    review_idx = st.selectbox(
-        "Choose a review to translate, or write your own below:",
-        options=list(range(len(reviews))),
-        format_func=lambda i: f"Review #{i+1} ({real_labels[i]}) — {reviews[i][:70]}...",
-    )
-    default_text = reviews[review_idx]
-    text_to_translate = st.text_area("Text to translate:", default_text, height=150)
- 
-    if st.button("🌍 Translate to Spanish"):
-        with st.spinner("Translating..."):
-            translator = safe_load(load_translation_pipeline, "translation")
-            chunk = text_to_translate[:1500]
-            translated = safe_call(
-                translator, chunk, truncation=True, friendly_name="translation"
-            )[0]["translation_text"]
-        col_en, col_es = st.columns(2)
-        with col_en:
-            st.markdown("**🇬🇧 Original (English)**")
-            st.markdown(f'<div class="review-card">{chunk}</div>', unsafe_allow_html=True)
-        with col_es:
-            st.markdown("**🇪🇸 Translated (Spanish)**")
-            st.markdown(f'<div class="review-card pos">{translated}</div>', unsafe_allow_html=True)
- 
-# ========================================================================================
-# TAB 4 — QUESTION ANSWERING
-# ========================================================================================
-with tab4:
-    st.markdown('<div class="section-title">Ask Questions About a Review</div>', unsafe_allow_html=True)
-    st.caption("Extractive Q&A using DistilBERT fine-tuned on SQuAD — the model pulls the answer directly from the review text.")
- 
-    qa_idx = st.selectbox(
-        "Select context review:",
-        options=list(range(len(reviews))),
-        format_func=lambda i: f"Review #{i+1} ({real_labels[i]}) — {reviews[i][:70]}...",
-        key="qa_select",
-    )
-    context = reviews[qa_idx]
-    st.markdown(f'<div class="review-card">{context}</div>', unsafe_allow_html=True)
- 
-    sample_questions = [
-        "Who directed the movie?",
-        "Who plays the lead role?",
-        "What is the movie about?",
-        "Custom question...",
-    ]
-    q_choice = st.selectbox("Pick a sample question or write your own:", sample_questions)
-    question = st.text_input("Your question:", "" if q_choice == "Custom question..." else q_choice)
- 
-    if st.button("❓ Get Answer") and question.strip():
-        with st.spinner("Finding the answer..."):
-            qa_pipe = safe_load(load_qa_pipeline, "question-answering")
-            result = safe_call(qa_pipe, question=question, context=context, friendly_name="question-answering")
-        st.markdown(f"""
-        <div class="review-card pos">
-            <div class="rc-head">
-                <span class="rc-tag pos">Answer</span>
-                <span class="rc-conf">Confidence: {result['score']:.2%}</span>
-            </div>
-            <div class="rc-text" style="font-size:1.05rem; font-weight:600;">{result['answer']}</div>
-        </div>
-        """, unsafe_allow_html=True)
- 
-# ========================================================================================
-# TAB 5 — SUMMARIZATION
-# ========================================================================================
-with tab5:
     st.markdown('<div class="section-title">Review Summarization</div>', unsafe_allow_html=True)
-    st.caption("Condenses long reviews into concise summaries using DistilBART (CNN/DailyMail fine-tuned).")
+    st.caption("Condenses long reviews into concise summaries, generated instantly as you pick a review.")
  
     sum_idx = st.selectbox(
         "Select a review to summarize:",
@@ -493,27 +331,26 @@ with tab5:
     max_len = st.slider("Max summary length (tokens):", 30, 150, 80)
     min_len = st.slider("Min summary length (tokens):", 10, 60, 25)
  
-    if st.button("📝 Summarize"):
-        if min_len >= max_len:
-            st.warning("Min length must be smaller than max length — adjust the sliders and try again.")
-        else:
-            with st.spinner("Generating summary..."):
-                summarizer = safe_load(load_summarization_pipeline, "summarization")
-                summary = safe_call(
-                    summarizer, full_review, max_length=max_len, min_length=min_len,
-                    do_sample=False, truncation=True, friendly_name="summarization"
-                )[0]["summary_text"]
-            orig_words = len(full_review.split())
-            summ_words = len(summary.split())
-            st.markdown(f"""
-            <div class="review-card pos">
-                <div class="rc-head">
-                    <span class="rc-tag pos">Summary</span>
-                    <span class="rc-conf">{orig_words} words → {summ_words} words ({(1 - summ_words/orig_words)*100:.0f}% shorter)</span>
-                </div>
-                <div class="rc-text">{summary}</div>
+    if min_len >= max_len:
+        st.warning("Min length must be smaller than max length — adjust the sliders.")
+    else:
+        with st.spinner("Generating summary..."):
+            summarizer = safe_load(load_summarization_pipeline, "summarization")
+            summary = safe_call(
+                summarizer, full_review, max_length=max_len, min_length=min_len,
+                do_sample=False, truncation=True, friendly_name="summarization"
+            )[0]["summary_text"]
+        orig_words = len(full_review.split())
+        summ_words = len(summary.split())
+        st.markdown(f"""
+        <div class="review-card pos">
+            <div class="rc-head">
+                <span class="rc-tag pos">Summary</span>
+                <span class="rc-conf">{orig_words} words → {summ_words} words ({(1 - summ_words/orig_words)*100:.0f}% shorter)</span>
             </div>
-            """, unsafe_allow_html=True)
+            <div class="rc-text">{summary}</div>
+        </div>
+        """, unsafe_allow_html=True)
  
 # --------------------------------------------------------------------------------------
 # FOOTER
