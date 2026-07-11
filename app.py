@@ -6,6 +6,7 @@ built on Hugging Face Transformers, wrapped in a polished Streamlit UI.
  
 import os
 import time
+from io import StringIO
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
@@ -153,13 +154,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
  
 # --------------------------------------------------------------------------------------
-# DATA LOADING (bundled dataset — no upload needed)
+# DATA LOADING (dataset is embedded directly in this file — no external file, no upload)
 # --------------------------------------------------------------------------------------
-DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "netflix_movie_dhurandhar_2.csv")
+from dataset import CSV_DATA
  
 @st.cache_data(show_spinner=False)
 def load_data():
-    df = pd.read_csv(DATA_PATH, delimiter=";")
+    df = pd.read_csv(StringIO(CSV_DATA), delimiter=";")
     df.columns = [c.strip() for c in df.columns]
     return df
  
